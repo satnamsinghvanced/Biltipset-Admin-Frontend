@@ -1,10 +1,10 @@
-import { useEffect, useState, useRef } from "react"; // 👈 Added useRef
+import { useEffect, useState, useRef, useCallback } from "react"; // 👈 Added useRef
 import { useDispatch, useSelector } from "react-redux";
 import { AiTwotoneEdit } from "react-icons/ai";
 import { RiDeleteBin5Line } from "react-icons/ri";
 import { LuFileUp, LuPlus } from "react-icons/lu";
 import { toast } from "react-toastify";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 
 import PageHeader from "../../components/PageHeader";
 import Pagination from "../../UI/pagination";
@@ -21,11 +21,18 @@ import { FaRegEye } from "react-icons/fa";
 export const Company = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const fileInputRef = useRef(null);
 
   const { companies, loading, error } = useSelector((state) => state.companies);
 
-  const [page, setPage] = useState(1);
+  // Initialize page from URL
+  const getInitialPage = () => {
+    const pageParam = searchParams.get('page');
+    return pageParam ? parseInt(pageParam, 10) || 1 : 1;
+  };
+
+  const [page, setPage] = useState(getInitialPage);
   const [limit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -43,19 +50,43 @@ export const Company = () => {
 
   const [uploadFile, setUploadFile] = useState(null);
 
-  useEffect(() => {
-    const fetchCompanies = async () => {
-      try {
-        const res = await dispatch(
-          getCompanies({ page, limit, search })
-        ).unwrap();
-        setTotalPages(res.totalPages || 1);
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    fetchCompanies();
+  // Fetch companies with search support
+  const fetchCompanies = useCallback(async () => {
+    try {
+      const res = await dispatch(
+        getCompanies({ page, limit, search })
+      ).unwrap();
+      setTotalPages(res.totalPages || 1);
+    } catch (err) {
+      console.error(err);
+    }
   }, [dispatch, page, limit, search]);
+
+  // Update page when URL changes
+  useEffect(() => {
+    const pageParam = searchParams.get('page');
+    const newPage = pageParam ? parseInt(pageParam, 10) || 1 : 1;
+    if (newPage !== page) {
+      setPage(newPage);
+    }
+  }, [searchParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Update URL when page changes (but not when initializing)
+  useEffect(() => {
+    const pageParam = searchParams.get('page');
+    const currentPageInUrl = pageParam ? parseInt(pageParam, 10) || 1 : 1;
+    if (page !== currentPageInUrl) {
+      if (page > 1) {
+        setSearchParams({ page: page.toString() });
+      } else {
+        setSearchParams({});
+      }
+    }
+  }, [page, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    fetchCompanies();
+  }, [fetchCompanies]);
 
   const handleDeleteCompany = async () => {
     if (!companyToDelete) return;
@@ -112,8 +143,6 @@ export const Company = () => {
 
     try {
       const result = await dispatch(importCompanies(formData)).unwrap();
-      // console.log(result);
-
       const { inserted = 0, skipped = 0 } = result;
 
       let message = "Companies imported successfully";
@@ -175,7 +204,7 @@ export const Company = () => {
   ];
 
   const totalCompanies = companies?.data?.length || 0;
-
+  
   return (
     <div className="space-y-6">
       <PageHeader
@@ -270,7 +299,16 @@ export const Company = () => {
                     <td className="px-6 py-4 text-slate-500">
                       {(page - 1) * limit + index + 1}
                     </td>
-                    <td className="px-6 py-4 font-medium text-slate-900">
+                    <td
+                      className="px-6 py-4 font-medium text-slate-900 cursor-pointer hover:text-blue-600 transition-colors"
+                      onClick={(e) => {
+                        if (e.ctrlKey || e.metaKey || e.button === 1) {
+                          window.open(`/company/${company._id}?page=${page}`, "_blank");
+                        } else {
+                          navigate(`/company/${company._id}?page=${page}`);
+                        }
+                      }}
+                    >
                       {company.companyName}
                     </td>
 
@@ -306,7 +344,16 @@ export const Company = () => {
                       <div className="flex items-center justify-center gap-2">
                         <button
                           className="rounded-full border border-slate-200 p-2 text-slate-500 hover:text-slate-900"
-                          onClick={() => navigate(`/company/${company._id}`)}
+                          onClick={(e) => {
+                            if (e.ctrlKey || e.metaKey || e.button === 1) {
+                              window.open(`/company/${company._id}?page=${page}`, "_blank");
+                              return;
+                            } else {
+                              navigate(`/company/${company._id}?page=${page}`)
+                            }
+                          }
+                          }
+
                           title="Preview"
                         >
                           <FaRegEye size={16} />
@@ -314,7 +361,7 @@ export const Company = () => {
                         <button
                           className="rounded-full border p-2 text-slate-500 hover:text-slate-900"
                           onClick={() =>
-                            navigate(`/company/${company._id}/edit`)
+                            navigate(`/company/${company._id}/Edit?page=${page}`)
                           }
                         >
                           <AiTwotoneEdit size={16} />
