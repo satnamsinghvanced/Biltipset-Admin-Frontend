@@ -1,19 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useDispatch, useSelector, shallowEqual } from "react-redux";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import PageHeader from "../../components/PageHeader";
-import ReactQuill from "react-quill-new";
-import "react-quill-new/dist/quill.snow.css";
-import { RiDeleteBin5Line } from "react-icons/ri";
 import {
-  clearSelectedCompany,
-  createCompany,
-  getCompanyById,
-  updateCompany,
-} from "../../store/slices/companySlice";
-import { uploadImage } from "../../store/slices/imageUpload";
+  clearSelectedCounty,
+  createCounty,
+  getCounties,
+  getCountyById,
+  updateCounty,
+} from "../../store/slices/countySlice";
 import { toast } from "react-toastify";
+import { RiDeleteBin5Line } from "react-icons/ri";
 import ImageUploader from "../../UI/ImageUpload";
+import { getCompaniesAll } from "../../store/slices/companySlice";
+import ReactQuill from "react-quill-new";
 
 const IMAGE_URL = import.meta.env.VITE_API_URL_IMAGE;
 const fixImageUrl = (url) => {
@@ -47,35 +47,43 @@ const quillFormats = [
   "image",
 ];
 
-const requiredFields = [
-  "companyName",
-  // "email",
-  // "zipCode",
-  "address",
-  "websiteAddress",
-];
+const requiredFields = ["name", "slug"];
 
-const CompanyFormPage = () => {
-  const { companyId } = useParams();
+function labelFor(name) {
+  const map = {
+    name: "County Name",
+    slug: "Slug",
+    excerpt: "Excerpt",
+  };
+  return map[name] || name;
+}
+
+const CountiesFormPage = () => {
+  const { countyId } = useParams();
   const [searchParams] = useSearchParams();
-  const isEditMode = Boolean(companyId);
+  const isEditMode = Boolean(countyId);
   const dispatch = useDispatch();
   const navigate = useNavigate();
-  const { selectedCompany } = useSelector((state) => state.companies || {});
+
+  const {
+    counties,
+    loading: citiesLoading,
+    selectedCounty,
+  } = useSelector((state) => state.counties || {});
+  const { allCompanies } = useSelector((state) => state.companies);
+
+  const [companySearch, setCompanySearch] = useState("");
 
   const [form, setForm] = useState({
-    companyName: "",
-    city: "",
-    address: "",
+    name: "",
+    slug: "",
+    excerpt: "",
+    title: "",
     description: "",
-    websiteAddress: "",
-    extractor: "",
-    brokerSites: "",
-    features: "",
-    totalRating: "",
-    averageRating: "",
-    companyImage: "",
-    isRecommended: false,
+    icon: "",
+    companies: [],
+
+    // SEO
     metaTitle: "",
     metaDescription: "",
     metaKeywords: "",
@@ -89,11 +97,6 @@ const CompanyFormPage = () => {
     ogImage: "",
     ogType: "website",
 
-    publishedDate: "",
-    lastUpdatedDate: "",
-    showPublishedDate: false,
-    showLastUpdatedDate: false,
-
     robots: {
       noindex: false,
       nofollow: false,
@@ -102,91 +105,97 @@ const CompanyFormPage = () => {
       noimageindex: false,
       notranslate: false,
     },
-
-    customHead: "",
-    slug: "",
-
-    redirect: {
-      enabled: false,
-      from: "",
-      to: "",
-      type: 301,
-    },
-
-    breadcrumbs: [],
-
-    includeInSitemap: true,
-    priority: 0.7,
-    changefreq: "weekly",
-
-    isScheduled: false,
-    scheduledPublishDate: "",
-
-    isDeleted: false,
-    isHidden: false,
   });
 
+  const [imageFile, setImageFile] = useState(null);
   const [previewImage, setPreviewImage] = useState("");
   const [errors, setErrors] = useState({});
-  const [isUploading, setIsUploading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [showCompaniesDropdown, setShowCompaniesDropdown] = useState(false);
+  const dropdownRef = useRef(null);
 
   useEffect(() => {
-    if (isEditMode && companyId) {
-      dispatch(getCompanyById(companyId));
-    } else {
-      dispatch(clearSelectedCompany());
+    function handleClickOutside(e) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setShowCompaniesDropdown(false);
+      }
     }
-    return () => {
-      dispatch(clearSelectedCompany());
-    };
-  }, [dispatch, isEditMode, companyId]);
-
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
   useEffect(() => {
-    if (isEditMode && selectedCompany) {
+    if (isEditMode && countyId) dispatch(getCountyById(countyId));
+    else dispatch(clearSelectedCounty());
+    return () => dispatch(clearSelectedCounty());
+  }, [dispatch, isEditMode, countyId]);
+  useEffect(() => {
+    dispatch(getCounties());
+  }, [dispatch]);
+  useEffect(() => {
+    dispatch(getCompaniesAll());
+  }, [dispatch]);
+  useEffect(() => {
+    if (isEditMode && selectedCounty) {
       setForm({
-        companyName: selectedCompany.companyName || "",
-        city: selectedCompany.city || "",
-        address: selectedCompany.address || "",
-        description: selectedCompany.description || "",
-        websiteAddress: selectedCompany.websiteAddress || "",
-        extractor: Array.isArray(selectedCompany.extractor)
-          ? selectedCompany.extractor.join(", ")
-          : "",
-        brokerSites: Array.isArray(selectedCompany.brokerSites)
-          ? selectedCompany.brokerSites.join(", ")
-          : "",
-        features: Array.isArray(selectedCompany.features)
-          ? selectedCompany.features.join(", ")
-          : "",
-        totalRating: selectedCompany.totalRating || 0,
-        averageRating: selectedCompany.averageRating || 0,
-        isRecommended: selectedCompany.isRecommended || false,
-        companyImage: selectedCompany.companyImage || "",
+        name: selectedCounty.name || "",
+        slug: selectedCounty.slug || "",
+        excerpt: selectedCounty.excerpt || "",
+        title: selectedCounty.title || "",
+        description: selectedCounty.description || "",
+        icon: selectedCounty.icon || "",
 
-        metaTitle: selectedCompany.metaTitle || "",
-        metaDescription: selectedCompany.metaDescription || "",
-        metaKeywords: selectedCompany.metaKeywords || "",
-        metaImage: selectedCompany.metaImage || "",
+        companies: Array.isArray(selectedCounty.companies)
+          ? selectedCounty.companies
+            .filter((c) => c.companyId)
+            .map((c, index) => ({
+              companyId: String(c.companyId._id || c.companyId),
+              rank: c.rank ?? index + 1,
+              isRecommended: !!c.isRecommended,
+            }))
+          : [],
 
-        canonicalUrl: selectedCompany.canonicalUrl || "",
-        jsonLd: selectedCompany.jsonLd || "",
+        metaTitle: selectedCounty.metaTitle || "",
+        metaDescription: selectedCounty.metaDescription || "",
+        metaKeywords: selectedCounty.metaKeywords || "",
+        metaImage: selectedCounty.metaImage || "",
 
-        ogTitle: selectedCompany.ogTitle || "",
-        ogDescription: selectedCompany.ogDescription || "",
-        ogImage: selectedCompany.ogImage || "",
-        ogType: selectedCompany.ogType || "website",
+        canonicalUrl: selectedCounty.canonicalUrl || "",
+        jsonLd: selectedCounty.jsonLd || "",
 
-        publishedDate: selectedCompany.publishedDate || "",
-        lastUpdatedDate: selectedCompany.lastUpdatedDate || "",
-        showPublishedDate: selectedCompany.showPublishedDate || false,
-        showLastUpdatedDate: selectedCompany.showLastUpdatedDate || false,
+        ogTitle: selectedCounty.ogTitle || "",
+        ogDescription: selectedCounty.ogDescription || "",
+        ogImage: selectedCounty.ogImage || "",
+        ogType: selectedCounty.ogType || "website",
 
-        robots: selectedCompany.robots,
+        robots:
+          typeof selectedCounty.robots === "string"
+            ? (() => {
+              try {
+                return JSON.parse(selectedCounty.robots);
+              } catch {
+                return {
+                  noindex: false,
+                  nofollow: false,
+                  noarchive: false,
+                  nosnippet: false,
+                  noimageindex: false,
+                  notranslate: false,
+                };
+              }
+            })()
+            : selectedCounty.robots || {
+              noindex: false,
+              nofollow: false,
+              noarchive: false,
+              nosnippet: false,
+              noimageindex: false,
+              notranslate: false,
+            },
       });
-      setPreviewImage(fixImageUrl(selectedCompany.companyImage || ""));
+
+      setPreviewImage(fixImageUrl(selectedCounty.icon || ""));
     }
-  }, [isEditMode, selectedCompany]);
+  }, [isEditMode, selectedCounty]);
 
   const validateField = (name, value) => {
     let message = "";
@@ -194,15 +203,6 @@ const CompanyFormPage = () => {
       if (!value || !String(value).trim()) {
         message = `${labelFor(name)} is required`;
       }
-      //  else {
-      //   if (name === "email") {
-      //     const re =
-      //       /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@(([^<>()[\]\\.,;:\s@"]+\.)+[^<>()[\]\\.,;:\s@"]{2,})$/i;
-      //     if (!re.test(String(value).toLowerCase())) {
-      //       message = "Please enter a valid email address";
-      //     }
-      //   }
-      // }
     }
     setErrors((prev) => ({ ...prev, [name]: message }));
     return message === "";
@@ -213,145 +213,62 @@ const CompanyFormPage = () => {
     requiredFields.forEach((f) => {
       const v = form[f];
       if (!v || !String(v).trim()) newErrors[f] = `${labelFor(f)} is required`;
-      // if (f === "email" && v && String(v).trim()) {
-      //   const re =
-      //     /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@(([^<>()[\]\\.,;:\s@"]+\.)+[^<>()[\]\\.,;:\s@"]{2,})$/i;
-      //   if (!re.test(String(v).toLowerCase())) {
-      //     newErrors.email = "Please enter a valid email address";
-      //   }
-      // }
     });
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
-  function labelFor(name) {
-    const map = {
-      companyName: "Company Name",
-      // email: "Email",
-      // zipCode: "Zip Code",
-      address: "Address (Competitor)",
-      websiteAddress: "Website Address",
-    };
-    return map[name] || name;
-  }
-
   const handleChange = (e) => {
-    const { name, type, checked, value } = e.target;
-
+    const { name, value, type, checked } = e.target;
     const newValue = type === "checkbox" ? checked : value;
-
-    setForm((prev) => ({
-      ...prev,
-      [name]: newValue,
-    }));
-
-    validateField(name, newValue);
-  };
-
-  const handleImageChange = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const allowed = [
-      "image/jpeg",
-      "image/png",
-      "image/gif",
-      "image/webp",
-      "image/svg+xml",
-      "image/x-icon",
-    ];
-    if (!allowed.includes(file.type)) {
-      toast.error("Invalid file type. Please upload an image.");
-      return;
-    }
-
-    try {
-      setIsUploading(true);
-      const result = await uploadImage(file);
-      const imageUrl =
-        typeof result === "string"
-          ? result
-          : result?.url || result?.data || result;
-      if (!imageUrl) {
-        throw new Error("Image upload failed: no URL returned");
-      }
-      setForm((prev) => ({ ...prev, companyImage: imageUrl }));
-      setPreviewImage(imageUrl);
-    } catch (err) {
-      console.error("Image upload error:", err);
-      toast.error(err?.message || "Failed to upload companyImage");
-    } finally {
-      setIsUploading(false);
+    setForm((prev) => ({ ...prev, [name]: newValue }));
+    if (type !== "checkbox") {
+      validateField(name, newValue);
     }
   };
 
-  const handleRemoveImage = () => {
-    setForm((prev) => ({ ...prev, companyImage: "" }));
-    setPreviewImage("");
+  const handleImageChange = (event) => {
+    const file = event.target.files?.[0];
+    setImageFile(file || null);
+    setPreviewImage(file ? URL.createObjectURL(file) : "");
   };
+  const buildPayload = () => ({
+    name: form.name.trim(),
+    slug: form.slug.trim(),
+    excerpt: form.excerpt,
+    title: form.title,
+    description: form.description,
+    icon: form.icon,
 
-  const buildPayload = () => {
-    const payload = {
-      companyName: form.companyName?.trim() || "",
-      city: form.city?.trim() || "",
-      address: form.address?.trim() || "",
-      description: form.description || "",
-      websiteAddress: form.websiteAddress?.trim() || "",
-      totalRating: form.totalRating || 0,
-      isRecommended: form.isRecommended || false,
-      averageRating: form.averageRating || 0,
-      companyImage: form.companyImage || "",
-      extractor: form.extractor
-        ? form.extractor
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-        : [],
-      brokerSites: form.brokerSites
-        ? form.brokerSites
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-        : [],
-      features: form.features
-        ? form.features
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean)
-        : [],
-      metaTitle: form.metaTitle?.trim() || "",
-      metaDescription: form.metaDescription?.trim() || "",
-      metaKeywords: form.metaKeywords || "",
-      metaImage: form.metaImage || "",
+    companies: form.companies.map((c, index) => ({
+      companyId: c.companyId,
+      rank: index + 1,
+      isRecommended: c.isRecommended,
+    })),
 
-      canonicalUrl: form.canonicalUrl?.trim() || "",
-      jsonLd: form.jsonLd || "",
+    // SEO
+    metaTitle: form.metaTitle,
+    metaDescription: form.metaDescription,
+    metaKeywords: form.metaKeywords,
+    metaImage: form.metaImage,
 
-      // Open Graph
-      ogTitle: form.ogTitle?.trim() || "",
-      ogDescription: form.ogDescription?.trim() || "",
-      ogImage: form.ogImage || "",
-      ogType: form.ogType || "website",
+    canonicalUrl: form.canonicalUrl,
+    jsonLd: form.jsonLd,
 
-      // Dates
-      publishedDate: form.publishedDate || "",
-      lastUpdatedDate: form.lastUpdatedDate || "",
-      showPublishedDate: form.showPublishedDate || false,
-      showLastUpdatedDate: form.showLastUpdatedDate || false,
+    ogTitle: form.ogTitle,
+    ogDescription: form.ogDescription,
+    ogImage: form.ogImage,
+    ogType: form.ogType,
 
-      // Robots
-      robots: {
-        noindex: !!form.robots.noindex,
-        nofollow: !!form.robots.nofollow,
-        noarchive: !!form.robots.noarchive,
-        nosnippet: !!form.robots.nosnippet,
-        noimageindex: !!form.robots.noimageindex,
-        notranslate: !!form.robots.notranslate,
-      },
-    };
-
-    return payload;
-  };
+    robots: {
+      noindex: !!form.robots.noindex,
+      nofollow: !!form.robots.nofollow,
+      noarchive: !!form.robots.noarchive,
+      nosnippet: !!form.robots.nosnippet,
+      noimageindex: !!form.robots.noimageindex,
+      notranslate: !!form.robots.notranslate,
+    },
+  });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -364,53 +281,101 @@ const CompanyFormPage = () => {
     setSubmitting(true);
 
     try {
-      const payload = buildPayload();
+      let payload;
+      let isFormData = false;
+
+      if (imageFile) {
+        isFormData = true;
+        payload = new FormData();
+
+        // Append all top-level fields
+        payload.append("name", form.name);
+        payload.append("slug", form.slug);
+        payload.append("excerpt", form.excerpt);
+        payload.append("title", form.title);
+        payload.append("description", form.description);
+
+        // File
+        payload.append("icon", imageFile);
+
+        // SEO & robots
+        payload.append("metaTitle", form.metaTitle);
+        payload.append("metaDescription", form.metaDescription);
+        payload.append("metaKeywords", form.metaKeywords);
+        payload.append("metaImage", form.metaImage);
+        payload.append("canonicalUrl", form.canonicalUrl);
+        payload.append("jsonLd", form.jsonLd);
+        payload.append("ogTitle", form.ogTitle);
+        payload.append("ogDescription", form.ogDescription);
+        payload.append("ogImage", form.ogImage);
+        payload.append("ogType", form.ogType);
+        payload.append("robots", JSON.stringify(form.robots));
+        payload.append("companies", JSON.stringify(form.companies));
+      } else {
+        payload = {
+          name: form.name,
+          slug: form.slug,
+          excerpt: form.excerpt,
+          title: form.title,
+          description: form.description,
+          icon: form.icon,
+          metaTitle: form.metaTitle,
+          metaDescription: form.metaDescription,
+          metaKeywords: form.metaKeywords,
+          metaImage: form.metaImage,
+          canonicalUrl: form.canonicalUrl,
+          jsonLd: form.jsonLd,
+          ogTitle: form.ogTitle,
+          ogDescription: form.ogDescription,
+          ogImage: form.ogImage,
+          ogType: form.ogType,
+          robots: form.robots,
+          companies: form.companies,
+        };
+      }
 
       if (isEditMode) {
         await dispatch(
-          updateCompany({ id: companyId, companyData: payload })
+          updateCounty({ id: countyId, countyData: payload, isFormData })
         ).unwrap();
-        toast.success("Company updated!");
+        toast.success("County updated!");
       } else {
-        await dispatch(createCompany(payload)).unwrap();
-        toast.success("Company created!");
+        await dispatch(createCounty({ countyData: payload, isFormData })).unwrap();
+        toast.success("County created!");
       }
 
       const page = searchParams.get('page');
-      const redirectUrl = page ? `/companies?page=${page}` : "/companies";
+      const redirectUrl = page ? `/counties?page=${page}` : "/counties";
       navigate(redirectUrl);
     } catch (err) {
-      console.error(err);
-      toast.error(
-        err?.data?.message || err?.message || "Failed to save the company."
-      );
+      toast.error(err?.data?.message || err.message);
     } finally {
       setSubmitting(false);
     }
   };
 
   const hasErrors = Object.values(errors).some(Boolean);
-  const isDisabled = hasErrors || submitting || isUploading;
+  const isDisabled = hasErrors || submitting;
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title={isEditMode ? "Edit Company Details" : "Add Company"}
+        title={isEditMode ? "Edit County Details" : "Add County"}
         description={
           isEditMode
-            ? "Update content for this Company."
-            : "Add a new Company to the database."
+            ? "Update content for this County."
+            : "Add a new County to the database."
         }
         buttonsList={useMemo(
           () => [
             {
-              value: "Back to Companies",
+              value: "Back to Counties",
               variant: "white",
               className:
                 "border border-slate-300 text-slate-700 hover:border-slate-400 hover:bg-white",
               onClick: () => {
                 const page = searchParams.get('page');
-                const redirectUrl = page ? `/companies?page=${page}` : "/companies";
+                const redirectUrl = page ? `/counties?page=${page}` : "/counties";
                 navigate(redirectUrl);
               },
             },
@@ -419,31 +384,25 @@ const CompanyFormPage = () => {
         )}
       />
 
-      <form
-        onSubmit={handleSubmit}
-        className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]"
-      >
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+      <form onSubmit={handleSubmit} className="">
+        <div className="rounded-2xl md:p-8  space-y-6 border bg-white border-slate-200 shadow-sm max-w-8xl m-auto p-4">
           <div className="grid gap-4 md:grid-cols-2">
             {[
-              { label: "Company Name", name: "companyName" },
-              { label: "Website Address", name: "websiteAddress" },
-              { label: "Address (Competitor)", name: "address" },
-              { label: "Total Rating", name: "totalRating", type: "number" },
-              {
-                label: "Average Rating",
-                name: "averageRating",
-                type: "number",
-              },
+              { label: "County Name", name: "name" },
+              { label: "Slug", name: "slug" },
+              { label: "Excerpt", name: "excerpt" },
+              { label: "Title", name: "title" },
             ].map((field) => (
               <div key={field.name}>
                 <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
                   {field.label}
-                  <span className="text-red-500">*</span>
+                  {requiredFields.includes(field.name) && (
+                    <span className="text-red-500">*</span>
+                  )}
                 </label>
                 <input
-                  type={field.type || "text"}
                   name={field.name}
+                  type={field.type || "text"}
                   value={form[field.name] ?? ""}
                   onChange={handleChange}
                   className={`mt-1 w-full rounded-xl border px-3 py-2 text-sm text-slate-900 outline-none transition
@@ -460,62 +419,229 @@ const CompanyFormPage = () => {
               </div>
             ))}
           </div>
+          <div ref={dropdownRef}>
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Companies <span className="text-red-500">*</span>
+            </label>
 
-          <div className="grid gap-4 md:grid-cols-2 mt-4">
-            {[
-              { label: "Extractor Tags (Comma Separated)", name: "extractor" },
-              { label: "Broker Sites (Comma Separated)", name: "brokerSites" },
-              { label: "Features", name: "features" },
-            ].map((field) => (
-              <div key={field.name}>
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  {field.label}
-                </label>
-                <textarea
-                  name={field.name}
-                  value={form[field.name] ?? ""}
-                  onChange={handleChange}
-                  rows={2}
-                  placeholder="e.g., tag1, tag2, tag3"
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm text-slate-900 outline-none transition focus:border-primary focus:ring-2 focus:ring-secondary/30"
+            {/* Trigger Button */}
+            <div
+              className="w-full border border-slate-200 rounded-xl px-3 py-2 mt-1 cursor-pointer"
+              onClick={() => setShowCompaniesDropdown((prev) => !prev)}
+            >
+              {form.companies.length === 0 ? (
+                <span className="text-slate-500 text-sm">Select Companies</span>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {form.companies.map((item) => {
+                    const company = allCompanies.find(
+                      (c) => c._id === item.companyId
+                    );
+                    return (
+                      <span
+                        key={item.companyId}
+                        className="bg-gray-100 text-slate-700 px-2 py-1 text-xs rounded-lg flex items-center gap-1"
+                      >
+                        {company?.companyName}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setForm((prev) => ({
+                              ...prev,
+                              companies: prev.companies.filter(
+                                (x) => x !== item
+                              ),
+                            }));
+                          }}
+                          className="text-blue-700 hover:text-blue-900"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Dropdown */}
+            {showCompaniesDropdown && (
+              <div className=" z-20 mt-2 w-full max-h-64 overflow-y-auto bg-white border rounded-xl shadow p-2">
+                {/* Search input */}
+                <input
+                  type="text"
+                  placeholder="Search companies..."
+                  value={companySearch}
+                  onChange={(e) => setCompanySearch(e.target.value)}
+                  className="w-full mb-2 rounded border px-2 py-1 text-sm outline-none focus:border-primary"
                 />
+
+                {/* Filtered list */}
+                {allCompanies
+                  ?.filter((c) =>
+                    c.companyName
+                      .toLowerCase()
+                      .includes(companySearch.toLowerCase())
+                  )
+                  .map((company) => (
+                    <label
+                      key={company._id}
+                      className="flex items-center gap-2 p-2 hover:bg-slate-100 cursor-pointer rounded"
+                    >
+                      <input
+                        type="checkbox"
+                        className="!relative"
+                        checked={form.companies.some(
+                          (c) => c.companyId === company._id
+                        )}
+                        onChange={(e) => {
+                          let updated = [...form.companies];
+                          if (e.target.checked) {
+                            if (updated.length >= 10) {
+                              toast.info("Maximum 10 companies allowed");
+                              return;
+                            }
+                            updated.push({
+                              companyId: company._id,
+                              rank: updated.length + 1,
+                              isRecommended: false,
+                            });
+                          } else {
+                            updated = updated.filter(
+                              (c) => c.companyId !== company._id
+                            );
+                          }
+                          setForm((prev) => ({
+                            ...prev,
+                            companies: updated,
+                          }));
+                        }}
+                      />
+                      <span>{company.companyName}</span>
+                    </label>
+                  ))}
               </div>
-            ))}
+            )}
+            <h4 className="font-semibold mt-4">Selected Companies</h4>
+
+            <div className="space-y-2">
+              {form.companies.map((item, index) => {
+                const company = allCompanies.find(
+                  (c) => c._id === item.companyId
+                );
+
+                return (
+                  <div
+                    key={item.companyId}
+                    className="flex items-center justify-between border rounded-lg p-2 bg-slate-50"
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-medium">
+                        {index + 1}. {company?.companyName}
+                      </span>
+
+                      {/* Recommended */}
+                      <label className="flex items-center gap-1 text-xs">
+                        <input
+                          type="checkbox"
+                          className="!relative"
+                          checked={item.isRecommended}
+                          onChange={() => {
+                            const updated = [...form.companies];
+                            updated[index].isRecommended =
+                              !updated[index].isRecommended;
+                            setForm((prev) => ({
+                              ...prev,
+                              companies: updated,
+                            }));
+                          }}
+                        />
+                        Recommended
+                      </label>
+                    </div>
+
+                    {/* Reorder */}
+                    <div className="flex gap-1">
+                      <button
+                        type="button"
+                        disabled={index === 0}
+                        onClick={() => {
+                          const updated = [...form.companies];
+                          [updated[index - 1], updated[index]] = [
+                            updated[index],
+                            updated[index - 1],
+                          ];
+                          setForm((prev) => ({
+                            ...prev,
+                            companies: updated,
+                          }));
+                        }}
+                      >
+                        ↑
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={index === form.companies.length - 1}
+                        onClick={() => {
+                          const updated = [...form.companies];
+                          [updated[index], updated[index + 1]] = [
+                            updated[index + 1],
+                            updated[index],
+                          ];
+                          setForm((prev) => ({
+                            ...prev,
+                            companies: updated,
+                          }));
+                        }}
+                      >
+                        ↓
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          {/* <div className="md:col-span-2">
-            <label
-              htmlFor="isRecommended-toggle"
-              className="flex items-center cursor-pointer pt-2"
-            >
-              <div className="relative">
-                <input
-                  type="checkbox"
-                  name="isRecommended"
-                  checked={form.isRecommended}
-                  onChange={handleChange}
-                  id="isRecommended-toggle"
-                  className="sr-only"
-                />
-
-                <div
-                  className={`w-11 h-6 rounded-full shadow-inner transition-colors duration-300 ease-in-out ${
-                    form.isRecommended ? "bg-primary" : "bg-slate-300"
-                  }`}
-                ></div>
-
-                <div
-                  className={`dot absolute left-0.5 top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-300 ease-in-out ${
-                    form.isRecommended ? "translate-x-full" : "translate-x-0"
-                  }`}
-                ></div>
-              </div>
-
-              <span className="ml-3 text-sm font-semibold text-slate-700 uppercase tracking-wide">
-                Recommended Company
-              </span>
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm mt-4">
+            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              Icon
             </label>
-          </div> */}
+            {previewImage ? (
+              <div className="mt-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-3">
+                <div className="relative">
+                  <img
+                    src={previewImage}
+                    alt="Preview"
+                    className="h-56 w-full rounded-xl object-cover"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-3 rounded-full bg-red-600 p-2 text-white shadow hover:bg-red-500"
+                    onClick={() => {
+                      setImageFile(null);
+                      setPreviewImage("");
+                    }}
+                    title="Remove image"
+                  >
+                    <RiDeleteBin5Line size={16} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <label className="mt-3 flex h-48 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 text-sm text-slate-500 hover:border-slate-300">
+                <span>Click to upload</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImageChange}
+                />
+              </label>
+            )}
+          </div>
           <div className="mt-4">
             <label className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
               Description
@@ -549,229 +675,169 @@ const CompanyFormPage = () => {
               />
             </div>
           </div>
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-            <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Company Image
-            </label>
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-6 mt-6">
+            {/* SEO SECTION */}
+            <div className="pt-6">
+              <h2 className="text-xl font-bold mb-4">SEO Settings</h2>
 
-            {previewImage ? (
-              <div className="mt-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-3">
-                <div className="relative">
-                  <img
-                    src={
-                      typeof previewImage === "string"
-                        ? previewImage.startsWith("http")
-                          ? previewImage
-                          : `${import.meta.env.VITE_API_URL_IMAGE
-                          }/${previewImage.replace(/^\//, "")}`
-                        : ""
-                    }
-                    alt="Preview"
-                    className="h-56 w-full rounded-xl object-cover"
-                  />
-                  <button
-                    type="button"
-                    className="absolute right-3 top-3 rounded-full bg-red-600 p-2 text-white shadow hover:bg-red-500"
-                    onClick={handleRemoveImage}
-                    title="Remove companyImage"
-                  >
-                    <RiDeleteBin5Line size={16} />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <label className="mt-3 flex h-48 cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 text-sm text-slate-500 hover:border-slate-300">
-                <span>Click to upload Company Image</span>
-                <input
-                  type="file"
-                  accept="companyImage/*"
-                  className="hidden"
-                  onChange={handleImageChange}
-                />
+              {/* Meta Title */}
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Meta Title
               </label>
-            )}
+              <input
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-primary"
+                value={form.metaTitle}
+                onChange={(e) =>
+                  setForm({ ...form, metaTitle: e.target.value })
+                }
+              />
 
-            {isUploading && (
-              <p className="mt-2 text-sm text-slate-500">
-                Uploading companyImage...
-              </p>
-            )}
-          </div>
-        </div>
+              {/* Meta Description */}
+              <label className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Meta Description
+              </label>
+              <textarea
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm h-24 focus:border-primary"
+                value={form.metaDescription}
+                onChange={(e) =>
+                  setForm({ ...form, metaDescription: e.target.value })
+                }
+              />
 
-        <div className="space-y-6">
-          <div className="space-y-6">
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
-              {/* SEO SECTION */}
-              <div className="pt-6">
-                <h2 className="text-xl font-bold mb-4">SEO Settings</h2>
+              {/* Keywords */}
+              <label className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Meta Keywords (comma separated)
+              </label>
+              <input
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-primary"
+                value={form.metaKeywords}
+                onChange={(e) =>
+                  setForm({ ...form, metaKeywords: e.target.value })
+                }
+              />
 
-                {/* Meta Title */}
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Meta Title
+              {/* Meta Image */}
+              <ImageUploader
+                label="Meta Image"
+                value={form.metaImage}
+                onChange={(img) => setForm({ ...form, metaImage: img })}
+              />
+            </div>
+
+            {/* OG TAGS */}
+            <div className="border-t pt-6">
+              <h2 className="text-xl font-bold mb-4">Open Graph (OG) Tags</h2>
+
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                OG Title
+              </label>
+              <input
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-primary"
+                value={form.ogTitle}
+                onChange={(e) => setForm({ ...form, ogTitle: e.target.value })}
+              />
+
+              <label className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                OG Description
+              </label>
+              <textarea
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm h-24 focus:border-primary"
+                value={form.ogDescription}
+                onChange={(e) =>
+                  setForm({ ...form, ogDescription: e.target.value })
+                }
+              />
+
+              <ImageUploader
+                label="OG Image"
+                value={form.ogImage}
+                onChange={(img) => setForm({ ...form, ogImage: img })}
+              />
+
+              <label className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                OG Type
+              </label>
+              <input
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-primary"
+                value={form.ogType}
+                onChange={(e) => setForm({ ...form, ogType: e.target.value })}
+              />
+            </div>
+
+            {/* ADVANCED SEO */}
+            <div className="border-t pt-6">
+              <h2 className="text-xl font-bold mb-4">Advanced SEO</h2>
+
+              <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Canonical URL
+              </label>
+              <input
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-primary"
+                value={form.canonicalUrl}
+                onChange={(e) =>
+                  setForm({ ...form, canonicalUrl: e.target.value })
+                }
+              />
+
+              <label className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                JSON-LD Schema
+              </label>
+              <textarea
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm h-28 focus:border-primary"
+                value={form.jsonLd}
+                onChange={(e) => setForm({ ...form, jsonLd: e.target.value })}
+              />
+
+              <label className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Custom Head Tags
+              </label>
+              <textarea
+                className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm h-24 focus:border-primary"
+                value={form.customHead}
+                onChange={(e) =>
+                  setForm({ ...form, customHead: e.target.value })
+                }
+              />
+            </div>
+
+            {/* ROBOTS SETTINGS */}
+            <div className="border-t pt-6">
+              <h2 className="text-xl font-bold mb-4">Robots Settings</h2>
+
+              {Object.keys(form.robots).map((key) => (
+                <label key={key} className="flex items-center gap-2">
+                  <input
+                    className="!relative"
+                    type="checkbox"
+                    checked={form.robots[key]}
+                    onChange={(e) =>
+                      setForm({
+                        ...form,
+                        robots: { ...form.robots, [key]: e.target.checked },
+                      })
+                    }
+                  />
+                  <span className="capitalize">{key}</span>
                 </label>
-                <input
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-primary"
-                  value={form.metaTitle}
-                  onChange={(e) =>
-                    setForm({ ...form, metaTitle: e.target.value })
-                  }
-                />
-
-                {/* Meta Description */}
-                <label className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Meta Description
-                </label>
-                <textarea
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm h-24 focus:border-primary"
-                  value={form.metaDescription}
-                  onChange={(e) =>
-                    setForm({ ...form, metaDescription: e.target.value })
-                  }
-                />
-
-                {/* Keywords */}
-                <label className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Meta Keywords (comma separated)
-                </label>
-                <input
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-primary"
-                  value={form.metaKeywords}
-                  onChange={(e) =>
-                    setForm({ ...form, metaKeywords: e.target.value })
-                  }
-                />
-
-                {/* Meta Image */}
-                <ImageUploader
-                  label="Meta Image"
-                  value={form.metaImage}
-                  onChange={(img) => setForm({ ...form, metaImage: img })}
-                />
-              </div>
-
-              {/* OG TAGS */}
-              <div className="border-t pt-6">
-                <h2 className="text-xl font-bold mb-4">Open Graph (OG) Tags</h2>
-
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  OG Title
-                </label>
-                <input
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-primary"
-                  value={form.ogTitle}
-                  onChange={(e) =>
-                    setForm({ ...form, ogTitle: e.target.value })
-                  }
-                />
-
-                <label className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  OG Description
-                </label>
-                <textarea
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm h-24 focus:border-primary"
-                  value={form.ogDescription}
-                  onChange={(e) =>
-                    setForm({ ...form, ogDescription: e.target.value })
-                  }
-                />
-
-                <ImageUploader
-                  label="OG Image"
-                  value={form.ogImage}
-                  onChange={(img) => setForm({ ...form, ogImage: img })}
-                />
-
-                <label className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  OG Type
-                </label>
-                <input
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-primary"
-                  value={form.ogType}
-                  onChange={(e) => setForm({ ...form, ogType: e.target.value })}
-                />
-              </div>
-
-              {/* ADVANCED SEO */}
-              <div className="border-t pt-6">
-                <h2 className="text-xl font-bold mb-4">Advanced SEO</h2>
-
-                <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Canonical URL
-                </label>
-                <input
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:border-primary"
-                  value={form.canonicalUrl}
-                  onChange={(e) =>
-                    setForm({ ...form, canonicalUrl: e.target.value })
-                  }
-                />
-
-                <label className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  JSON-LD Schema
-                </label>
-                <textarea
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm h-28 focus:border-primary"
-                  value={form.jsonLd}
-                  onChange={(e) => setForm({ ...form, jsonLd: e.target.value })}
-                />
-
-                <label className="mt-4 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Custom Head Tags
-                </label>
-                <textarea
-                  className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2 text-sm h-24 focus:border-primary"
-                  value={form.customHead}
-                  onChange={(e) =>
-                    setForm({ ...form, customHead: e.target.value })
-                  }
-                />
-              </div>
-
-              {/* ROBOTS SETTINGS */}
-              <div className="border-t pt-6">
-                <h2 className="text-xl font-bold mb-4">Robots Settings</h2>
-
-                {Object.keys(form.robots).map((key) => (
-                  <label key={key} className="flex items-center gap-2">
-                    <input
-                      className="!relative"
-                      type="checkbox"
-                      checked={form.robots[key]}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          robots: { ...form.robots, [key]: e.target.checked },
-                        })
-                      }
-                    />
-                    <span className="capitalize">{key}</span>
-                  </label>
-                ))}
-              </div>
+              ))}
             </div>
           </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mt-8">
             <button
               type="submit"
               disabled={isDisabled}
-              className="w-full rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-70"
+              className=" w-full rounded-full bg-primary px-6 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-70"
             >
               {submitting
                 ? "Saving..."
                 : isEditMode
                   ? "Save Changes"
-                  : "Create Company"}
+                  : "Create County"}
             </button>
 
-            {isDisabled && (
+            {isDisabled && hasErrors && (
               <p className="mt-2 text-xs text-red-600">
-                {isUploading
-                  ? "Please wait companyImage is uploading..."
-                  : hasErrors
-                    ? "Please fill all required fields to enable Save"
-                    : ""}
+                Please fill all required fields to enable Save
               </p>
             )}
           </div>
@@ -781,4 +847,4 @@ const CompanyFormPage = () => {
   );
 };
 
-export default CompanyFormPage;
+export default CountiesFormPage;
